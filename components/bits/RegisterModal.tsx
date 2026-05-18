@@ -1,0 +1,149 @@
+"use client";
+
+import { type FormEvent, useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { useRegister } from "@/hooks/useContract";
+import {
+  getReadableErrorMessage,
+  type RegisteredProfile,
+  ROLE_OPTIONS,
+} from "@/components/bits/utils";
+
+type RegisterModalProps = {
+  open: boolean;
+  onClose: () => void;
+  onRegistered: (profile: RegisteredProfile) => void;
+};
+
+export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProps) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [matricNumber, setMatricNumber] = useState("");
+  const [schoolName, setSchoolName] = useState("");
+  const {
+    isRegisterPending,
+    isSuccess: isRegisterSuccess,
+    registerAsync,
+  } = useRegister();
+
+  useEffect(() => {
+    if (isRegisterSuccess && role !== "") {
+      toast.success("Registration Successful");
+      onRegistered({ name, role: Number(role) });
+      onClose();
+    }
+  }, [isRegisterSuccess, name, onClose, onRegistered, role]);
+
+  async function handleRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (role === "") {
+      return;
+    }
+
+    try {
+      await registerAsync(
+        name.trim(),
+        Number(role),
+        role === "0" ? matricNumber.trim() : "",
+        role === "0" ? schoolName.trim() : "",
+      );
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error));
+    }
+  }
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/35 px-4 py-8"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="register-title"
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h2 id="register-title" className="text-xl font-bold">
+            Register
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close register modal"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-4xl font-medium leading-none text-[#810B38] transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-[#810B38]"
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={handleRegister} className="space-y-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold">Full name</span>
+            <input
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
+              placeholder="Jane Doe"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold">Role</span>
+            <select
+              required
+              value={role}
+              onChange={(event) => setRole(event.target.value)}
+              className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
+            >
+              <option value="">Select User Role</option>
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {role === "0" ? (
+            <>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold">
+                  Matric number
+                </span>
+                <input
+                  required
+                  value={matricNumber}
+                  onChange={(event) => setMatricNumber(event.target.value)}
+                  className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
+                  placeholder="BITS/2026/001"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold">School name</span>
+                <input
+                  required
+                  value={schoolName}
+                  onChange={(event) => setSchoolName(event.target.value)}
+                  className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
+                  placeholder="University of Bits"
+                />
+              </label>
+            </>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={isRegisterPending}
+            className="h-11 w-full rounded-md bg-[#810B38] px-4 text-sm font-bold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Register
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

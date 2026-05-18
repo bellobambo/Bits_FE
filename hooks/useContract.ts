@@ -266,6 +266,7 @@ export function useRegister() {
     ...write,
     ...receipt,
     hash: write.data,
+    isRegisterPending: write.isPending || receipt.isLoading,
     register: (name: string, role: Role, matricNumber: string, schoolName: string) =>
       write.writeContract({
         ...contract,
@@ -291,6 +292,7 @@ export function useUploadHouse() {
     ...write,
     ...receipt,
     hash: write.data,
+    isUploadHousePending: write.isPending || receipt.isLoading,
     uploadHouse: (input: HouseInput) =>
       write.writeContract({
         ...contract,
