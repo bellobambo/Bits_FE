@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useRegister } from "@/hooks/useContract";
@@ -71,18 +72,26 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
     }
   }
 
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/35 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="register-title"
-    >
-      <div className="w-full max-w-lg rounded-2xl bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/35 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="register-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="w-full max-w-lg rounded-2xl bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl"
+          >
         <div className="mb-6 flex items-center justify-between gap-4">
           <h2 id="register-title" className="text-xl font-bold">
             Register
@@ -162,7 +171,9 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
             Register
           </button>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

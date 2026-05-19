@@ -16,6 +16,8 @@ type PropertyReviewRequest = {
   }>;
 };
 
+const PROPERTY_VALUE_NGN_CAP = 950_000_000;
+
 const propertyReviewSchema = {
   type: "object",
   additionalProperties: false,
@@ -235,6 +237,36 @@ function normalizeMntValue(value: unknown) {
   return match?.[0] ?? "";
 }
 
+function toPositiveNumber(value: unknown) {
+  const parsed = Number(normalizeMntValue(value));
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function toPlainMoneyValue(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+
+  return String(Math.round(value * 100) / 100);
+}
+
+function getRoomCount(payload: PropertyReviewRequest, review: {
+  autofill?: { roomCount?: number };
+}) {
+  const formRoomCount = Number(payload.roomCount);
+
+  if (Number.isFinite(formRoomCount) && formRoomCount > 0) {
+    return formRoomCount;
+  }
+
+  const autofillRoomCount = Number(review.autofill?.roomCount);
+
+  return Number.isFinite(autofillRoomCount) && autofillRoomCount > 0
+    ? autofillRoomCount
+    : 1;
+}
+
 export async function POST(request: Request) {
   const openAiApiKey = process.env.OPENAI_API_KEY;
 
@@ -307,6 +339,7 @@ export async function POST(request: Request) {
                 "Give MNT valuation suggestions as estimates, not guarantees.",
                 "If the proof document contains a property value in Nigerian naira, extract it into propertyValueNgn. Example: 20,000,000 naira should become \"20000000\".",
                 "If the proof document does not contain a property value, suggest propertyValueNgn from location, room count, visible property quality, and student hostel use case.",
+                "Keep propertyValueNgn below 1000000000. Do not return exactly 1000000000.",
                 "Convert naira values into MNT using the provided mntToNgnRate. If no rate is provided, assume 1 MNT = 1500 NGN.",
                 "Return all money fields as plain numeric strings only, for example \"1000\" or \"12.5\". Do not include words like Approximately, commas, currency symbols, NGN, naira, or MNT in the values.",
                 "Keep yearlyRentNgn affordable for students. Suggest yearly rent between 300000 and 600000 NGN, where near-campus or higher-quality properties may approach 600000 NGN.",
@@ -397,6 +430,49 @@ export async function POST(request: Request) {
   review.valuation.halfYearRentNgn = normalizeMntValue(
     review.valuation.halfYearRentNgn,
   );
+
+  const yearlyRentNgn = toPositiveNumber(review.valuation.yearlyRentNgn);
+  let halfYearRentNgn = toPositiveNumber(review.valuation.halfYearRentNgn);
+  let propertyValueNgn = toPositiveNumber(review.valuation.propertyValueNgn);
+  const propertyValueMntFromAi = toPositiveNumber(review.valuation.propertyValueMnt);
+
+  // If NGN property value is missing, back-derive from AI's MNT value
+  if (propertyValueNgn === 0 && propertyValueMntFromAi > 0) {
+    propertyValueNgn = propertyValueMntFromAi * mntToNgnRate;
+  }
+
+  // If still no property value, estimate from rent × rooms × multiplier
+  if (propertyValueNgn === 0 && yearlyRentNgn > 0) {
+    const roomCount = getRoomCount(payload, review);
+
+    propertyValueNgn = yearlyRentNgn * roomCount * 4;
+    review.valuation.explanation = `${review.valuation.explanation} Property value was estimated from annual rent, room count, and a conservative student-hostel income multiple.`;
+  }
+
+  // Cap property NGN value
+  if (propertyValueNgn > PROPERTY_VALUE_NGN_CAP) {
+    propertyValueNgn = PROPERTY_VALUE_NGN_CAP;
+    review.valuation.explanation = `${review.valuation.explanation} Property value was capped below ₦1,000,000,000 to keep the on-chain estimate conservative.`;
+  }
+
+  // Fill in half-year NGN rent if missing
+  if (halfYearRentNgn === 0 && yearlyRentNgn > 0) {
+    halfYearRentNgn = yearlyRentNgn / 2;
+  }
+
+  // Always recompute all MNT values from their NGN counterparts using the
+  // fetched exchange rate. The AI computes NGN and MNT independently which
+  // produces inconsistent pairs; recomputing here keeps them in sync.
+  const propertyValueMnt = propertyValueNgn > 0 ? propertyValueNgn / mntToNgnRate : 0;
+  const yearlyRentMnt = yearlyRentNgn > 0 ? yearlyRentNgn / mntToNgnRate : 0;
+  const halfYearRentMnt = halfYearRentNgn > 0 ? halfYearRentNgn / mntToNgnRate : 0;
+
+  review.valuation.propertyValueNgn = toPlainMoneyValue(propertyValueNgn);
+  review.valuation.propertyValueMnt = toPlainMoneyValue(propertyValueMnt);
+  review.valuation.yearlyRentNgn = toPlainMoneyValue(yearlyRentNgn);
+  review.valuation.yearlyRentMnt = toPlainMoneyValue(yearlyRentMnt);
+  review.valuation.halfYearRentNgn = toPlainMoneyValue(halfYearRentNgn);
+  review.valuation.halfYearRentMnt = toPlainMoneyValue(halfYearRentMnt);
 
   return Response.json(review);
 }

@@ -68,23 +68,38 @@ export function BitsApp() {
   if (!isConnected) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F1E2D1] px-6 text-[#810B38]">
-        <motion.button
-          type="button"
-          disabled={!preferredConnector || isPending}
-          onClick={() => {
-            if (preferredConnector) {
-              connect({ connector: preferredConnector });
-            }
-          }}
-          className="h-12 min-w-44 cursor-pointer rounded-md bg-[#810B38] px-6 text-base font-semibold text-[#F1E2D1] shadow-sm transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1] disabled:cursor-not-allowed disabled:opacity-60"
-          whileHover={{
-            scale: preferredConnector && !isPending ? 1.04 : 1,
-            transition: { duration: 0.2 },
-          }}
-          whileTap={{ scale: 0.95 }}
+        <motion.section
+          className="flex w-full max-w-2xl flex-col items-center text-center"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
         >
-          {isPending ? "Connecting..." : "Connect Wallet"}
-        </motion.button>
+          <h1 className="text-5xl font-black tracking-normal sm:text-6xl">Bits</h1>
+          <div className="mt-5 max-w-xl text-base font-semibold leading-7 sm:text-lg">
+            <p>Landlords: Verify and list AI-checked student hostels on Bits.</p>
+            <p>Investors: Review hostel-backed rental opportunities.</p>
+            <p className="whitespace-nowrap">
+              Students: Rent safely with transparent Mantle on-chain receipts.
+            </p>
+          </div>
+          <motion.button
+            type="button"
+            disabled={!preferredConnector || isPending}
+            onClick={() => {
+              if (preferredConnector) {
+                connect({ connector: preferredConnector });
+              }
+            }}
+            className="mt-9 h-12 min-w-44 cursor-pointer rounded-md bg-[#810B38] px-6 text-base font-semibold text-[#F1E2D1] shadow-sm transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1] disabled:cursor-not-allowed disabled:opacity-60"
+            whileHover={{
+              scale: preferredConnector && !isPending ? 1.04 : 1,
+              transition: { duration: 0.2 },
+            }}
+            whileTap={{ scale: 0.95 }}
+          >
+            {isPending ? "Connecting..." : "Connect Wallet"}
+          </motion.button>
+        </motion.section>
       </main>
     );
   }
@@ -100,34 +115,36 @@ export function BitsApp() {
         onRegister={() => setIsRegisterOpen(true)}
       />
 
-      {isUserRegistered ? (
-        <section className="w-full px-5 py-4 sm:px-8">
+      <section className="w-full px-5 py-4 sm:px-8">
+        {isUserRegistered && (
           <div className="flex max-w-lg items-center gap-2 text-base font-bold">
             <span>{profileName}</span>
             <span aria-hidden="true">•</span>
             <span>{profileRole}</span>
           </div>
+        )}
 
-          <div className="mx-auto mt-6 w-full max-w-[92rem]">
-            {isLandlord && (
-              <button
-                type="button"
-                onClick={() => setIsPropertyOpen(true)}
-                className="h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
-              >
-                Add Property
-              </button>
-            )}
+        <div className="mx-auto mt-6 w-full max-w-[92rem]">
+          {isUserRegistered && isLandlord && (
+            <button
+              type="button"
+              onClick={() => setIsPropertyOpen(true)}
+              className="h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
+            >
+              Add Property
+            </button>
+          )}
 
-            <PropertyList
-              studentMatricNumber={studentMatricNumber}
-              studentSchoolName={studentSchoolName}
-              userAddress={address}
-              userRole={profileRoleNumber ?? undefined}
-            />
-          </div>
-        </section>
-      ) : null}
+          <PropertyList
+            isUserRegistered={isUserRegistered}
+            onRegister={() => setIsRegisterOpen(true)}
+            studentMatricNumber={studentMatricNumber}
+            studentSchoolName={studentSchoolName}
+            userAddress={address}
+            userRole={profileRoleNumber ?? undefined}
+          />
+        </div>
+      </section>
 
       <RegisterModal
         open={isRegisterOpen}

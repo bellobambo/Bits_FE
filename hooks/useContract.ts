@@ -122,6 +122,17 @@ export function useGetHousePhotos(houseId?: bigint) {
   });
 }
 
+export function useGetAIReviews(houseId?: bigint) {
+  return useReadContract({
+    ...contract,
+    functionName: "getAIReviews",
+    args: [houseId ?? ZERO_BIGINT],
+    query: {
+      enabled: houseId !== undefined,
+    },
+  });
+}
+
 export function useGetInvestment(houseId?: bigint, investor?: Address) {
   return useReadContract({
     ...contract,
@@ -358,6 +369,86 @@ export function usePayRent() {
         functionName: "payRent",
         args: [houseId, term],
         value,
+      }),
+  };
+}
+
+export function useStoreInvestmentReview() {
+  const write = useWriteContract();
+  const receipt = useWaitForTransactionReceipt({
+    hash: write.data,
+  });
+
+  return {
+    ...write,
+    ...receipt,
+    hash: write.data,
+    isStoreInvestmentReviewPending: write.isPending || receipt.isLoading,
+    storeInvestmentReview: (
+      houseId: bigint,
+      status: string,
+      confidenceBps: bigint,
+      summary: string,
+      evidenceHash: `0x${string}`,
+      evidenceURI: string,
+    ) =>
+      write.writeContract({
+        ...contract,
+        functionName: "storeInvestmentReview",
+        args: [houseId, status, confidenceBps, summary, evidenceHash, evidenceURI],
+      }),
+    storeInvestmentReviewAsync: (
+      houseId: bigint,
+      status: string,
+      confidenceBps: bigint,
+      summary: string,
+      evidenceHash: `0x${string}`,
+      evidenceURI: string,
+    ) =>
+      write.writeContractAsync({
+        ...contract,
+        functionName: "storeInvestmentReview",
+        args: [houseId, status, confidenceBps, summary, evidenceHash, evidenceURI],
+      }),
+  };
+}
+
+export function useStorePropertyVerificationReview() {
+  const write = useWriteContract();
+  const receipt = useWaitForTransactionReceipt({
+    hash: write.data,
+  });
+
+  return {
+    ...write,
+    ...receipt,
+    hash: write.data,
+    isStorePropertyVerificationReviewPending: write.isPending || receipt.isLoading,
+    storePropertyVerificationReview: (
+      houseId: bigint,
+      status: string,
+      confidenceBps: bigint,
+      summary: string,
+      evidenceHash: `0x${string}`,
+      evidenceURI: string,
+    ) =>
+      write.writeContract({
+        ...contract,
+        functionName: "storePropertyVerificationReview",
+        args: [houseId, status, confidenceBps, summary, evidenceHash, evidenceURI],
+      }),
+    storePropertyVerificationReviewAsync: (
+      houseId: bigint,
+      status: string,
+      confidenceBps: bigint,
+      summary: string,
+      evidenceHash: `0x${string}`,
+      evidenceURI: string,
+    ) =>
+      write.writeContractAsync({
+        ...contract,
+        functionName: "storePropertyVerificationReview",
+        args: [houseId, status, confidenceBps, summary, evidenceHash, evidenceURI],
       }),
   };
 }

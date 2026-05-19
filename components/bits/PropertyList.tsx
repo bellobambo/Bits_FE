@@ -1,10 +1,14 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { parseEther, type Address } from "viem";
+import { keccak256, parseEther, stringToHex, type Address } from "viem";
+import { usePublicClient } from "wagmi";
+import { CONTRACT_ABI, CONTRACT_ADDRESS } from "@/lib/contract";
 import {
+  useGetAIReviews,
   useGetAllHouses,
   useGetHousePhotos,
   useGetInvestment,
@@ -14,6 +18,7 @@ import {
   useInvest,
   usePayRent,
   useReceiptCount,
+  useStoreInvestmentReview,
   useUser,
 } from "@/hooks/useContract";
 import {
@@ -22,6 +27,7 @@ import {
   getReadableErrorMessage,
   getRegisteredUser,
   ipfsToGatewayUrl,
+  MANTLE_SEPOLIA_CHAIN_ID,
   ROLE_IDS,
   tokenAmountToNumber,
 } from "@/components/bits/utils";
@@ -68,6 +74,20 @@ type InvestmentReview = {
   suggestedInvestmentMnt: string;
 };
 
+type AIReview = {
+  id: bigint;
+  houseId: bigint;
+  reviewType: number;
+  reviewer: Address;
+  reviewerRole: number;
+  status: string;
+  confidenceBps: bigint;
+  summary: string;
+  evidenceHash: `0x${string}`;
+  evidenceURI: string;
+  createdAt: bigint;
+};
+
 type StudentPropertyReview = {
   rating: "good_fit" | "fair_fit" | "needs_review";
   summary: string;
@@ -91,6 +111,9 @@ type RentalReceipt = {
   dueDate: bigint;
   endDate: bigint;
 };
+
+const MANTLESCAN_TX_URL = "https://sepolia.mantlescan.xyz/tx";
+const BITS_DEPLOYMENT_BLOCK = BigInt(38_826_822);
 
 type RawHouseObject = Partial<House> & {
   landlord?: Address;
@@ -157,7 +180,7 @@ function formatTimestamp(value: bigint) {
 }
 
 function getRentTermLabel(term: number) {
-  return term === 0 ? "Yearly" : "Half-year";
+  return term === 1 ? "Yearly" : "Half-year";
 }
 
 function getRemainingFunding(house: House) {
@@ -197,6 +220,24 @@ function getMaximumInvestment(house: House, remainingFunding: bigint) {
   const fiftyPercent = house.propertyValue / BigInt(2);
 
   return fiftyPercent > remainingFunding ? remainingFunding : fiftyPercent;
+}
+
+function getInvestmentReviewConfidenceBps(rating: InvestmentReview["rating"]) {
+  if (rating === "strong") {
+    return BigInt(8_500);
+  }
+
+  if (rating === "moderate") {
+    return BigInt(6_500);
+  }
+
+  return BigInt(4_500);
+}
+
+function getConciseOnchainReview(review: InvestmentReview) {
+  const summary = `${review.rating}: ${review.summary}`.replace(/\s+/g, " ").trim();
+
+  return summary.length > 140 ? `${summary.slice(0, 137)}...` : summary;
 }
 
 function normalizeHouse(rawHouse: RawHouse | RawHouseObject): House {
@@ -421,12 +462,64 @@ function StudentReceiptItem({
   student: Address;
 }) {
   const { data } = useGetReceipt(receiptId);
+  const publicClient = usePublicClient({ chainId: MANTLE_SEPOLIA_CHAIN_ID });
+  const receipt = useMemo(
+    () => (data ? normalizeReceipt(data as RawRentalReceipt) : null),
+    [data],
+  );
+  const [receiptTxHash, setReceiptTxHash] = useState<`0x${string}` | null>(null);
+  const [isReceiptTxLoading, setIsReceiptTxLoading] = useState(false);
 
-  if (!data) {
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadReceiptTransaction() {
+      if (!publicClient || !receipt) {
+        setReceiptTxHash(null);
+        return;
+      }
+
+      setIsReceiptTxLoading(true);
+
+      try {
+        const events = await publicClient.getContractEvents({
+          address: CONTRACT_ADDRESS,
+          abi: CONTRACT_ABI,
+          eventName: "RentPaid",
+          args: {
+            receiptId: receipt.id,
+            houseId: receipt.houseId,
+            student,
+          },
+          fromBlock: BITS_DEPLOYMENT_BLOCK,
+          toBlock: "latest",
+        });
+        const rentPaidEvent = events.at(-1);
+
+        if (isMounted) {
+          setReceiptTxHash(rentPaidEvent?.transactionHash ?? null);
+        }
+      } catch {
+        if (isMounted) {
+          setReceiptTxHash(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsReceiptTxLoading(false);
+        }
+      }
+    }
+
+    void loadReceiptTransaction();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [publicClient, receipt, student]);
+
+  if (!receipt) {
     return null;
   }
-
-  const receipt = normalizeReceipt(data as RawRentalReceipt);
 
   if (receipt.student.toLowerCase() !== student.toLowerCase()) {
     return null;
@@ -466,6 +559,26 @@ function StudentReceiptItem({
           <span className="font-bold">Landlord:</span> {receipt.landlordName}{" "}
           <span className="font-semibold">({formatAddress(receipt.landlord)})</span>
         </p>
+      </div>
+      <div className="mt-auto pt-4">
+        {receiptTxHash ? (
+          <a
+            className="inline-flex h-9 items-center justify-center rounded-md bg-[#810B38] px-3 text-xs font-bold text-[#F1E2D1] transition-transform hover:scale-[1.03]"
+            href={`${MANTLESCAN_TX_URL}/${receiptTxHash}`}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View Receipt On-chain
+          </a>
+        ) : (
+          <button
+            className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-md bg-[#810B38]/45 px-3 text-xs font-bold text-[#F1E2D1]"
+            disabled
+            type="button"
+          >
+            {isReceiptTxLoading ? "Finding Receipt..." : "Receipt Tx Unavailable"}
+          </button>
+        )}
       </div>
     </article>
   );
@@ -582,8 +695,20 @@ function HistoryDrawer({
   userRole?: number;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/35">
-      <aside className="bits-hidden-scroll h-full w-full max-w-3xl overflow-y-auto bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+      className="fixed inset-0 z-50 flex justify-end bg-neutral-900/35"
+    >
+      <motion.aside
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        className="bits-hidden-scroll h-full w-full max-w-3xl overflow-y-auto bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl"
+      >
         <div className="mb-6 flex items-start justify-between gap-4 border-b border-[#810B38]/15 pb-4">
           <div>
             <h2 className="text-xl font-bold">My History</h2>
@@ -602,31 +727,42 @@ function HistoryDrawer({
         </div>
 
         <RoleHistory userAddress={userAddress} userRole={userRole} />
-      </aside>
-    </div>
+      </motion.aside>
+    </motion.div>
   );
 }
 
 function PropertyDrawer({
   house,
+  isUserRegistered,
   onClose,
+  onRegister,
   studentMatricNumber,
   studentSchoolName,
   userRole,
 }: {
   house: House;
+  isUserRegistered?: boolean;
   onClose: () => void;
+  onRegister?: () => void;
   studentMatricNumber?: string;
   studentSchoolName?: string;
   userRole?: number;
 }) {
   const { data: photoData } = useGetHousePhotos(house.id);
+  const { data: aiReviewsData } = useGetAIReviews(house.id);
   const photos = Array.isArray(photoData) ? photoData : [];
+  const aiReviews = Array.isArray(aiReviewsData) ? (aiReviewsData as AIReview[]) : [];
+  // reviewType 0 = PropertyVerification (set by the contract's storePropertyVerificationReview)
+  const verificationReviews = aiReviews.filter((r) => r.reviewType === 0);
+  const latestVerification = verificationReviews.at(-1) ?? null;
   const [investAmount, setInvestAmount] = useState("");
-  const [rentTerm, setRentTerm] = useState(0);
+  const [rentTerm, setRentTerm] = useState(1);
   const [isInvesting, setIsInvesting] = useState(false);
   const [isRenting, setIsRenting] = useState(false);
   const [isReviewingInvestment, setIsReviewingInvestment] = useState(false);
+  const [isApplyingInvestmentReview, setIsApplyingInvestmentReview] =
+    useState(false);
   const [isReviewingStudentProperty, setIsReviewingStudentProperty] =
     useState(false);
   const [investmentReview, setInvestmentReview] =
@@ -635,6 +771,7 @@ function PropertyDrawer({
     useState<StudentPropertyReview | null>(null);
   const { investAsync } = useInvest();
   const { payRentAsync } = usePayRent();
+  const { storeInvestmentReviewAsync } = useStoreInvestmentReview();
   const remainingFunding = getRemainingFunding(house);
   const minimumInvestment = getMinimumInvestment(house, remainingFunding);
   const maximumInvestment = getMaximumInvestment(house, remainingFunding);
@@ -712,10 +849,51 @@ function PropertyDrawer({
     }
   }
 
+  async function applyInvestmentSuggestion() {
+    if (!investmentReview) {
+      return;
+    }
+
+    const suggestedAmount = investmentReview.suggestedInvestmentMnt
+      .replace(/,/g, "")
+      .replace(/mnt/gi, "")
+      .trim();
+    const onchainSummary = getConciseOnchainReview(investmentReview);
+    const evidenceHash = keccak256(
+      stringToHex(
+        JSON.stringify({
+          houseId: house.id.toString(),
+          rating: investmentReview.rating,
+          summary: onchainSummary,
+          suggestedAmount,
+        }),
+      ),
+    );
+
+    setIsApplyingInvestmentReview(true);
+
+    try {
+      setInvestAmount(suggestedAmount);
+      await storeInvestmentReviewAsync(
+        house.id,
+        investmentReview.rating,
+        getInvestmentReviewConfidenceBps(investmentReview.rating),
+        onchainSummary,
+        evidenceHash,
+        "",
+      );
+      toast.success("Investment review saved on-chain");
+    } catch (error) {
+      toast.error(getReadableErrorMessage(error));
+    } finally {
+      setIsApplyingInvestmentReview(false);
+    }
+  }
+
   async function handleRent() {
     setIsRenting(true);
     try {
-      const value = rentTerm === 0 ? house.yearlyRent : house.halfYearRent;
+      const value = rentTerm === 1 ? house.yearlyRent : house.halfYearRent;
       await payRentAsync(house.id, rentTerm, value);
       toast.success("Room rented successfully");
     } catch (error) {
@@ -763,8 +941,20 @@ function PropertyDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/35">
-      <aside className="bits-hidden-scroll h-full w-full max-w-6xl overflow-y-auto bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+      className="fixed inset-0 z-50 flex justify-end bg-neutral-900/35"
+    >
+      <motion.aside
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        className="bits-hidden-scroll h-full w-full max-w-6xl overflow-y-auto bg-[#F1E2D1] p-6 text-[#810B38] shadow-2xl"
+      >
         <div className="mb-6 flex items-start justify-between gap-4 border-b border-[#810B38]/15 pb-4">
           <div>
             <h2 className="text-xl font-bold">{house.hostelName}</h2>
@@ -810,15 +1000,58 @@ function PropertyDrawer({
           <section className="rounded-lg border border-[#810B38]/15 bg-white/35 p-4">
             <p className="font-bold">Pricing</p>
             <div className="mt-3 space-y-2">
-              <p>Property value: {formatTokenAmount(house.propertyValue)}</p>
               <p>Yearly rent: {formatTokenAmount(house.yearlyRent)}</p>
               <p>Half-year rent: {formatTokenAmount(house.halfYearRent)}</p>
-              <p>Total invested: {formatTokenAmount(house.totalInvested)}</p>
+              {userRole !== ROLE_IDS.student ? (
+                <>
+                  <p>Property value: {formatTokenAmount(house.propertyValue)}</p>
+                  <p>Total invested: {formatTokenAmount(house.totalInvested)}</p>
+                </>
+              ) : null}
             </div>
             {(userRole === ROLE_IDS.landlord || userRole === ROLE_IDS.investor) ? (
               <FundingProgress house={house} />
             ) : null}
           </section>
+
+          {latestVerification ? (
+            <section className="rounded-lg border border-[#810B38]/15 bg-white/35 p-4">
+              <p className="font-bold">Property Verification</p>
+              <div className="mt-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {latestVerification.status === "verified" ? (
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-600" />
+                  ) : (
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-bold capitalize text-white ${
+                        latestVerification.status === "failed"
+                          ? "bg-red-700"
+                          : "bg-amber-600"
+                      }`}
+                    >
+                      {latestVerification.status.replace("_", " ")}
+                    </span>
+                  )}
+                  <span className="text-xs font-semibold opacity-75">
+                    {(Number(latestVerification.confidenceBps) / 100).toFixed(0)}% confidence
+                  </span>
+                </div>
+                <p className="text-sm font-medium leading-relaxed">
+                  {latestVerification.summary.charAt(0).toUpperCase() + latestVerification.summary.slice(1)}
+                </p>
+                {latestVerification.evidenceURI ? (
+                  <a
+                    href={ipfsToGatewayUrl(latestVerification.evidenceURI)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block text-xs font-bold underline underline-offset-2 opacity-75 hover:opacity-100"
+                  >
+                    View proof of ownership document ↗
+                  </a>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {userRole === ROLE_IDS.investor && (
             <section className="rounded-lg border border-[#810B38]/15 bg-white/35 p-4">
@@ -888,6 +1121,16 @@ function PropertyDrawer({
                         <p className="mt-2 text-xs font-semibold">
                           Suggested amount: {investmentReview.suggestedInvestmentMnt} MNT
                         </p>
+                        <button
+                          type="button"
+                          disabled={isApplyingInvestmentReview}
+                          onClick={applyInvestmentSuggestion}
+                          className="mt-3 h-9 rounded-md border border-[#810B38]/35 px-3 text-xs font-bold transition-colors hover:bg-[#810B38] hover:text-[#F1E2D1] focus:outline-none focus:ring-2 focus:ring-[#810B38] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isApplyingInvestmentReview
+                            ? "Saving Review..."
+                            : "Apply Suggestion"}
+                        </button>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           <div>
                             <p className="font-semibold">Positives</p>
@@ -1038,8 +1281,8 @@ function PropertyDrawer({
                         onChange={(e) => setRentTerm(Number(e.target.value))}
                         className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
                       >
-                        <option value={0}>Yearly — {formatTokenAmount(house.yearlyRent)}</option>
-                        <option value={1}>Half-year — {formatTokenAmount(house.halfYearRent)}</option>
+                        <option value={1}>Yearly — {formatTokenAmount(house.yearlyRent)}</option>
+                        <option value={0}>Half-year — {formatTokenAmount(house.halfYearRent)}</option>
                       </select>
                     </label>
                     <button
@@ -1053,6 +1296,22 @@ function PropertyDrawer({
                   </div>
                 </div>
               )}
+            </section>
+          )}
+
+          {isUserRegistered === false && (
+            <section className="rounded-lg border border-[#810B38]/15 bg-white/35 p-4">
+              <p className="text-base font-bold">Invest or rent this property</p>
+              <p className="mt-1 text-sm font-medium opacity-75">
+                Register an account to invest in this property or rent a room.
+              </p>
+              <button
+                type="button"
+                onClick={onRegister}
+                className="mt-4 h-10 w-full rounded-md bg-[#810B38] px-4 text-sm font-bold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
+              >
+                Register Now
+              </button>
             </section>
           )}
 
@@ -1083,18 +1342,20 @@ function PropertyDrawer({
             </section>
           ) : null}
         </div>
-      </aside>
-    </div>
+      </motion.aside>
+    </motion.div>
   );
 }
 
 function PropertyCard({
   house,
+  isMntPriceLoading,
   mntUsdPrice,
   onViewMore,
   userRole,
 }: {
   house: House;
+  isMntPriceLoading: boolean;
   mntUsdPrice: number | null;
   onViewMore: () => void;
   userRole?: number;
@@ -1131,11 +1392,13 @@ function PropertyCard({
         <div className="mt-1 flex items-center justify-between gap-3 border-t border-[#810B38]/15 pt-4">
           <p className="text-sm font-bold">{formatTokenAmount(house.propertyValue)}</p>
           <p className="text-xs font-semibold">
-            {usdyValue === null
-              ? "Loading USDY..."
-              : `~${usdyValue.toLocaleString(undefined, {
+            {usdyValue !== null
+              ? `~${usdyValue.toLocaleString(undefined, {
                   maximumFractionDigits: 2,
-                })} USDY`}
+                })} USDY`
+              : isMntPriceLoading
+                ? "Loading USDY..."
+                : null}
           </p>
         </div>
       </div>
@@ -1152,11 +1415,15 @@ function PropertyCard({
 }
 
 export function PropertyList({
+  isUserRegistered,
+  onRegister,
   studentMatricNumber,
   studentSchoolName,
   userAddress,
   userRole,
 }: {
+  isUserRegistered?: boolean;
+  onRegister?: () => void;
   studentMatricNumber?: string;
   studentSchoolName?: string;
   userAddress?: Address;
@@ -1165,6 +1432,7 @@ export function PropertyList({
   const [selectedHouse, setSelectedHouse] = useState<House | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [mntUsdPrice, setMntUsdPrice] = useState<number | null>(null);
+  const [isMntPriceLoading, setIsMntPriceLoading] = useState(true);
   const { data, isLoading } = useGetAllHouses();
   const houses = useMemo(() => {
     if (!Array.isArray(data)) {
@@ -1173,7 +1441,7 @@ export function PropertyList({
 
     return (data as Array<RawHouse | RawHouseObject>)
       .map(normalizeHouse)
-      .filter((house) => house.id >= BigInt(0));
+      .filter((house) => house.id >= BigInt(0) && house.active);
   }, [data]);
 
   useEffect(() => {
@@ -1188,8 +1456,10 @@ export function PropertyList({
           setMntUsdPrice(data.price);
         }
       } catch {
+        // price unavailable — leave mntUsdPrice as null
+      } finally {
         if (isMounted) {
-          setMntUsdPrice(null);
+          setIsMntPriceLoading(false);
         }
       }
     }
@@ -1226,6 +1496,7 @@ export function PropertyList({
           {houses.map((house) => (
             <PropertyCard
               house={house}
+              isMntPriceLoading={isMntPriceLoading}
               key={house.id.toString()}
               mntUsdPrice={mntUsdPrice}
               onViewMore={() => setSelectedHouse(house)}
@@ -1235,23 +1506,30 @@ export function PropertyList({
         </div>
       )}
 
-      {selectedHouse ? (
-        <PropertyDrawer
-          house={selectedHouse}
-          onClose={() => setSelectedHouse(null)}
-          studentMatricNumber={studentMatricNumber}
-          studentSchoolName={studentSchoolName}
-          userRole={userRole}
-        />
-      ) : null}
+      <AnimatePresence>
+        {selectedHouse && (
+          <PropertyDrawer
+            house={selectedHouse}
+            isUserRegistered={isUserRegistered}
+            key={selectedHouse.id.toString()}
+            onClose={() => setSelectedHouse(null)}
+            onRegister={onRegister}
+            studentMatricNumber={studentMatricNumber}
+            studentSchoolName={studentSchoolName}
+            userRole={userRole}
+          />
+        )}
+      </AnimatePresence>
 
-      {isHistoryOpen ? (
-        <HistoryDrawer
-          onClose={() => setIsHistoryOpen(false)}
-          userAddress={userAddress}
-          userRole={userRole}
-        />
-      ) : null}
+      <AnimatePresence>
+        {isHistoryOpen && (
+          <HistoryDrawer
+            onClose={() => setIsHistoryOpen(false)}
+            userAddress={userAddress}
+            userRole={userRole}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 }

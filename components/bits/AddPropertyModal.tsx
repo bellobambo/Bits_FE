@@ -1,9 +1,16 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { parseEther } from "viem";
-import { type HouseInput, useUploadHouse } from "@/hooks/useContract";
+import { keccak256, parseEther, stringToHex } from "viem";
+import { usePublicClient } from "wagmi";
+import {
+  type HouseInput,
+  useNextHouseId,
+  useStorePropertyVerificationReview,
+  useUploadHouse,
+} from "@/hooks/useContract";
 import { getReadableErrorMessage } from "@/components/bits/utils";
 
 type AddPropertyModalProps = {
@@ -118,8 +125,63 @@ function formatNumberValue(value: string) {
   });
 }
 
+function normalizeDecimalInput(value: string) {
+  return value
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "")
+    .replace(/(\..*)\./g, "$1");
+}
+
+function normalizeEtherInput(value: string) {
+  const normalized = normalizeDecimalInput(value).trim();
+
+  if (!normalized || normalized === ".") {
+    throw new Error("Enter a valid MNT amount.");
+  }
+
+  return normalized.startsWith(".") ? `0${normalized}` : normalized;
+}
+
 function getBriefList(items?: string[]) {
   return Array.isArray(items) ? items.filter(Boolean).slice(0, 3) : [];
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getVerificationConfidenceBps(confidence: number) {
+  if (!Number.isFinite(confidence) || confidence <= 0) {
+    return BigInt(0);
+  }
+
+  if (confidence <= 1) {
+    return BigInt(Math.round(confidence * 10_000));
+  }
+
+  if (confidence <= 100) {
+    return BigInt(Math.round(confidence * 100));
+  }
+
+  return BigInt(Math.min(10_000, Math.round(confidence)));
+}
+
+function getConciseVerificationReview(review: PropertyReview) {
+  const signals = getBriefList(review.verification.matchedSignals)
+    .slice(0, 2)
+    .join("; ");
+  const summary = [
+    `${review.verification.status}: ${review.verification.reason}`,
+    signals ? `Signals: ${signals}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return summary.length > 160 ? `${summary.slice(0, 157)}...` : summary;
 }
 
 export function AddPropertyModal({
@@ -140,13 +202,21 @@ export function AddPropertyModal({
   const [halfYearRent, setHalfYearRent] = useState("");
   const [propertyValue, setPropertyValue] = useState("");
   const [isReviewingProperty, setIsReviewingProperty] = useState(false);
+  const [isSavingAiVerificationOnchain, setIsSavingAiVerificationOnchain] =
+    useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const publicClient = usePublicClient();
+  const { data: nextHouseId } = useNextHouseId();
   const {
     isSuccess: isUploadHouseSuccess,
     isUploadHousePending,
     uploadHouseAsync,
   } = useUploadHouse();
+  const {
+    isStorePropertyVerificationReviewPending,
+    storePropertyVerificationReviewAsync,
+  } = useStorePropertyVerificationReview();
 
   useEffect(() => {
     if (isUploadHouseSuccess) {
@@ -247,6 +317,7 @@ export function AddPropertyModal({
     setPropertyValue(review.valuation.propertyValueMnt);
     setYearlyRent(review.valuation.yearlyRentMnt);
     setHalfYearRent(review.valuation.halfYearRentMnt);
+    toast.success("Suggestions applied");
   }
 
   const matchedSignals = getBriefList(review?.verification.matchedSignals);
@@ -276,6 +347,7 @@ export function AddPropertyModal({
     }
 
     try {
+      const newHouseId = nextHouseId ? BigInt(nextHouseId) : undefined;
       const input: HouseInput = {
         hostelName: hostelName.trim(),
         hostelLocation: hostelLocation.trim(),
@@ -283,30 +355,81 @@ export function AddPropertyModal({
         proofOfOwnership: proofOfOwnership.ipfsUrl,
         photos: photos.map((photo) => photo.ipfsUrl),
         roomCount: BigInt(roomCount),
-        yearlyRent: parseEther(yearlyRent),
-        halfYearRent: parseEther(halfYearRent),
-        propertyValue: parseEther(propertyValue),
+        yearlyRent: parseEther(normalizeEtherInput(yearlyRent)),
+        halfYearRent: parseEther(normalizeEtherInput(halfYearRent)),
+        propertyValue: parseEther(normalizeEtherInput(propertyValue)),
       };
 
-      await uploadHouseAsync(input);
+      const uploadHash = await uploadHouseAsync(input);
+
+      if (review && proofOfOwnership && newHouseId && publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: uploadHash });
+
+        const onchainSummary = getConciseVerificationReview(review);
+        const evidenceHash = keccak256(
+          stringToHex(
+            JSON.stringify({
+              houseId: newHouseId.toString(),
+              proof: proofOfOwnership.ipfsUrl,
+              status: review.verification.status,
+              summary: onchainSummary,
+            }),
+          ),
+        );
+        const savingToast = toast.loading("Saving AI verification on-chain...");
+
+        setIsSavingAiVerificationOnchain(true);
+        await delay(900);
+
+        try {
+          const verificationHash = await storePropertyVerificationReviewAsync(
+            newHouseId,
+            review.verification.status,
+            getVerificationConfidenceBps(review.verification.confidence),
+            onchainSummary,
+            evidenceHash,
+            proofOfOwnership.ipfsUrl,
+          );
+          await publicClient.waitForTransactionReceipt({ hash: verificationHash });
+          toast.success("AI verification saved on-chain", {
+            id: savingToast,
+          });
+        } catch (error) {
+          toast.error(getReadableErrorMessage(error), {
+            id: savingToast,
+          });
+          return;
+        } finally {
+          setIsSavingAiVerificationOnchain(false);
+        }
+      }
+
       onClose();
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
     }
   }
 
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/35 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="property-title"
-    >
-      <div className="my-auto flex max-h-[90vh] w-full max-w-[42rem] flex-col rounded-2xl bg-[#F1E2D1] p-4 text-[#810B38] shadow-2xl sm:p-6">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/35 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="property-title"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="my-auto flex max-h-[90vh] w-full max-w-[42rem] flex-col rounded-2xl bg-[#F1E2D1] p-4 text-[#810B38] shadow-2xl sm:p-6"
+          >
         <div className="mb-6 flex shrink-0 items-center justify-between gap-4 border-b border-[#810B38]/15 pb-4">
           <h2 id="property-title" className="text-xl font-bold">
             Add Property
@@ -409,6 +532,10 @@ export function AddPropertyModal({
                 <h3 className="text-sm font-bold">AI Property Review</h3>
                 <p className="mt-1 text-xs font-medium">
                   Autofills empty fields, verifies ownership, and suggests valuation.
+                </p>
+                <p className="mt-1 text-xs font-semibold opacity-75">
+                  Public verification appears on property listings only after
+                  the AI review is saved on-chain during property creation.
                 </p>
               </div>
               <button
@@ -521,10 +648,13 @@ export function AddPropertyModal({
               <input
                 required
                 min="0"
-                step="0.000000000000000001"
-                type="number"
+                inputMode="decimal"
+                pattern="^\d*\.?\d*$"
+                type="text"
                 value={propertyValue}
-                onChange={(event) => setPropertyValue(event.target.value)}
+                onChange={(event) =>
+                  setPropertyValue(normalizeDecimalInput(event.target.value))
+                }
                 className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
                 placeholder="1000"
               />
@@ -539,10 +669,13 @@ export function AddPropertyModal({
               <input
                 required
                 min="0"
-                step="0.000000000000000001"
-                type="number"
+                inputMode="decimal"
+                pattern="^\d*\.?\d*$"
+                type="text"
                 value={yearlyRent}
-                onChange={(event) => setYearlyRent(event.target.value)}
+                onChange={(event) =>
+                  setYearlyRent(normalizeDecimalInput(event.target.value))
+                }
                 className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
                 placeholder="12"
               />
@@ -555,10 +688,13 @@ export function AddPropertyModal({
               <input
                 required
                 min="0"
-                step="0.000000000000000001"
-                type="number"
+                inputMode="decimal"
+                pattern="^\d*\.?\d*$"
+                type="text"
                 value={halfYearRent}
-                onChange={(event) => setHalfYearRent(event.target.value)}
+                onChange={(event) =>
+                  setHalfYearRent(normalizeDecimalInput(event.target.value))
+                }
                 className="h-11 w-full rounded-md border border-[#810B38]/35 bg-white/55 px-3 text-sm outline-none transition focus:border-[#810B38] focus:ring-2 focus:ring-[#810B38]/25"
                 placeholder="6"
               />
@@ -567,15 +703,26 @@ export function AddPropertyModal({
 
           <button
             type="submit"
-            disabled={isUploadingProof || isUploadingPhotos || isUploadHousePending}
+            disabled={
+              isUploadingProof ||
+              isUploadingPhotos ||
+              isUploadHousePending ||
+              isStorePropertyVerificationReviewPending ||
+              isSavingAiVerificationOnchain
+            }
             className="h-11 w-full rounded-md bg-[#810B38] px-4 text-sm font-bold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isUploadingProof || isUploadingPhotos
               ? "Uploading Files..."
+              : isSavingAiVerificationOnchain ||
+                  isStorePropertyVerificationReviewPending
+                ? "Saving AI verification on-chain..."
               : "Create Property"}
           </button>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
