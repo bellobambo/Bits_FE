@@ -1,14 +1,22 @@
 export const MANTLE_SEPOLIA_CHAIN_ID = 5003;
 
+export const ROLE_IDS = {
+  landlord: 1,
+  student: 2,
+  investor: 3,
+} as const;
+
 export const ROLE_OPTIONS = [
-  { label: "Student", value: 0 },
-  { label: "Landlord", value: 1 },
-  { label: "Investor", value: 2 },
+  { label: "Student", value: ROLE_IDS.student },
+  { label: "Landlord", value: ROLE_IDS.landlord },
+  { label: "Investor", value: ROLE_IDS.investor },
 ] as const;
 
 export type RegisteredProfile = {
+  matricNumber?: string;
   name: string;
   role: number;
+  schoolName?: string;
 };
 
 export function formatAddress(address?: string) {
@@ -55,6 +63,8 @@ export function getRegisteredUser(data: unknown) {
   return {
     name: String(data[0] ?? ""),
     role: Number(data[1] ?? 0),
+    matricNumber: String(data[2] ?? ""),
+    schoolName: String(data[3] ?? ""),
     registered: Boolean(data[4]),
   };
 }

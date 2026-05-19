@@ -1,4 +1,4 @@
-import { http, createConfig } from 'wagmi'
+import { http, fallback, createConfig } from 'wagmi'
 import { sepolia } from 'wagmi/chains'
 import { injected, walletConnect } from 'wagmi/connectors'
 
@@ -45,7 +45,13 @@ export const config = createConfig({
         })] : []),
     ],
     transports: {
-        [mantleTestnet.id]: http(process.env.NEXT_PUBLIC_MANTLE_TESTNET_RPC_URL || 'https://rpc.sepolia.mantle.xyz'),
+        [mantleTestnet.id]: fallback([
+            ...(process.env.NEXT_PUBLIC_MANTLE_TESTNET_RPC_URL ? [http(process.env.NEXT_PUBLIC_MANTLE_TESTNET_RPC_URL)] : []),
+            http('https://rpc.ankr.com/mantle_sepolia'),
+            http('https://mantle-sepolia.drpc.org'),
+            http('https://mantle-sepolia-testnet.public.blastapi.io'),
+            http('https://rpc.sepolia.mantle.xyz'),
+        ]),
         [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL),
     },
     ssr: true,

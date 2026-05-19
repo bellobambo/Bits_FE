@@ -12,6 +12,7 @@ import {
   getRegisteredUser,
   getRoleLabel,
   MANTLE_SEPOLIA_CHAIN_ID,
+  ROLE_IDS,
   type RegisteredProfile,
 } from "@/components/bits/utils";
 import { useUser } from "@/hooks/useContract";
@@ -37,11 +38,16 @@ export function BitsApp() {
   const profileName = registeredUser?.registered
     ? registeredUser.name
     : localProfile?.name;
-  const profileRole = registeredUser?.registered
-    ? getRoleLabel(registeredUser.role)
-    : localProfile
-      ? getRoleLabel(localProfile.role)
-      : "";
+  const profileRoleNumber =
+    registeredUser?.registered ? registeredUser.role : localProfile?.role ?? null;
+  const profileRole = profileRoleNumber !== null ? getRoleLabel(profileRoleNumber) : "";
+  const studentMatricNumber = registeredUser?.registered
+    ? registeredUser.matricNumber
+    : localProfile?.matricNumber;
+  const studentSchoolName = registeredUser?.registered
+    ? registeredUser.schoolName
+    : localProfile?.schoolName;
+  const isLandlord = profileRoleNumber === ROLE_IDS.landlord;
   const formattedBalance = mntBalance
     ? formatUnits(mntBalance.value, mntBalance.decimals)
     : "0";
@@ -103,15 +109,22 @@ export function BitsApp() {
           </div>
 
           <div className="mx-auto mt-6 w-full max-w-[92rem]">
-            <button
-              type="button"
-              onClick={() => setIsPropertyOpen(true)}
-              className="h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
-            >
-              Add Property
-            </button>
+            {isLandlord && (
+              <button
+                type="button"
+                onClick={() => setIsPropertyOpen(true)}
+                className="h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
+              >
+                Add Property
+              </button>
+            )}
 
-            <PropertyList />
+            <PropertyList
+              studentMatricNumber={studentMatricNumber}
+              studentSchoolName={studentSchoolName}
+              userAddress={address}
+              userRole={profileRoleNumber ?? undefined}
+            />
           </div>
         </section>
       ) : null}

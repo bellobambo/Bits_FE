@@ -1,11 +1,12 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useRegister } from "@/hooks/useContract";
 import {
   getReadableErrorMessage,
   type RegisteredProfile,
+  ROLE_IDS,
   ROLE_OPTIONS,
 } from "@/components/bits/utils";
 
@@ -20,6 +21,7 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
   const [role, setRole] = useState("");
   const [matricNumber, setMatricNumber] = useState("");
   const [schoolName, setSchoolName] = useState("");
+  const hasHandledSuccessRef = useRef(false);
   const {
     isRegisterPending,
     isSuccess: isRegisterSuccess,
@@ -27,12 +29,28 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
   } = useRegister();
 
   useEffect(() => {
-    if (isRegisterSuccess && role !== "") {
-      toast.success("Registration Successful");
-      onRegistered({ name, role: Number(role) });
-      onClose();
+    if (!isRegisterSuccess || role === "" || hasHandledSuccessRef.current) {
+      return;
     }
-  }, [isRegisterSuccess, name, onClose, onRegistered, role]);
+
+    hasHandledSuccessRef.current = true;
+    toast.success("Registration Successful");
+    onRegistered({
+      matricNumber,
+      name,
+      role: Number(role),
+      schoolName,
+    });
+    onClose();
+  }, [
+    isRegisterSuccess,
+    matricNumber,
+    name,
+    onClose,
+    onRegistered,
+    role,
+    schoolName,
+  ]);
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,11 +59,12 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
     }
 
     try {
+      hasHandledSuccessRef.current = false;
       await registerAsync(
         name.trim(),
         Number(role),
-        role === "0" ? matricNumber.trim() : "",
-        role === "0" ? schoolName.trim() : "",
+        Number(role) === ROLE_IDS.student ? matricNumber.trim() : "",
+        Number(role) === ROLE_IDS.student ? schoolName.trim() : "",
       );
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
@@ -107,7 +126,7 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
             </select>
           </label>
 
-          {role === "0" ? (
+          {Number(role) === ROLE_IDS.student ? (
             <>
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold">
