@@ -181,7 +181,7 @@ function getConciseVerificationReview(review: PropertyReview) {
     .replace(/\s+/g, " ")
     .trim();
 
-  return summary.length > 160 ? `${summary.slice(0, 157)}...` : summary;
+  return summary;
 }
 
 export function AddPropertyModal({
