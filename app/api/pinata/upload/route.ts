@@ -50,5 +50,8 @@ export async function POST(request: Request) {
   return Response.json({
     cid: data.IpfsHash,
     url: `ipfs://${data.IpfsHash}`,
+    gatewayUrl: `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`,
+    fileName: file.name,
+    mimeType: file.type,
   });
 }

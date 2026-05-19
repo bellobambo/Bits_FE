@@ -19,6 +19,28 @@ export function formatAddress(address?: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+export function formatTokenAmount(value: bigint) {
+  const divisor = BigInt(10) ** BigInt(18);
+  const whole = value / divisor;
+  const fraction = value % divisor;
+  const fractionText = fraction.toString().padStart(18, "0").slice(0, 4);
+  const trimmedFraction = fractionText.replace(/0+$/, "");
+
+  return `${whole.toLocaleString()}${trimmedFraction ? `.${trimmedFraction}` : ""} MNT`;
+}
+
+export function tokenAmountToNumber(value: bigint) {
+  return Number(value) / 1e18;
+}
+
+export function ipfsToGatewayUrl(value: string) {
+  if (value.startsWith("ipfs://")) {
+    return `https://gateway.pinata.cloud/ipfs/${value.replace("ipfs://", "")}`;
+  }
+
+  return value;
+}
+
 export function getRoleLabel(roleValue: number) {
   return (
     ROLE_OPTIONS.find((option) => option.value === roleValue)?.label ?? "User"

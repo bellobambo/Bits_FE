@@ -6,6 +6,7 @@ import { formatUnits } from "viem";
 import { useAccount, useBalance, useConnect, useDisconnect } from "wagmi";
 import { AddPropertyModal } from "@/components/bits/AddPropertyModal";
 import { AppNavbar } from "@/components/bits/AppNavbar";
+import { PropertyList } from "@/components/bits/PropertyList";
 import { RegisterModal } from "@/components/bits/RegisterModal";
 import {
   getRegisteredUser,
@@ -101,13 +102,17 @@ export function BitsApp() {
             <span>{profileRole}</span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsPropertyOpen(true)}
-            className="ml-8 mt-6 h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1] sm:ml-16"
-          >
-            Add Property
-          </button>
+          <div className="mx-auto mt-6 w-full max-w-[92rem]">
+            <button
+              type="button"
+              onClick={() => setIsPropertyOpen(true)}
+              className="h-11 rounded-md bg-[#810B38] px-5 text-sm font-semibold text-[#F1E2D1] transition-colors hover:bg-[#6d092f] focus:outline-none focus:ring-2 focus:ring-[#810B38] focus:ring-offset-2 focus:ring-offset-[#F1E2D1]"
+            >
+              Add Property
+            </button>
+
+            <PropertyList />
+          </div>
         </section>
       ) : null}
 
@@ -117,6 +122,7 @@ export function BitsApp() {
         onRegistered={handleRegistered}
       />
       <AddPropertyModal
+        landlordName={profileName}
         open={isPropertyOpen}
         onClose={() => setIsPropertyOpen(false)}
       />

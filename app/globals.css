@@ -19,3 +19,11 @@ body {
   color: var(--foreground);
   font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
 }
+
+.bits-hidden-scroll {
+  scrollbar-width: none;
+}
+
+.bits-hidden-scroll::-webkit-scrollbar {
+  display: none;
+}
