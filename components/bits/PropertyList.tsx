@@ -756,6 +756,13 @@ function PropertyDrawer({
   // reviewType 0 = PropertyVerification (set by the contract's storePropertyVerificationReview)
   const verificationReviews = aiReviews.filter((r) => r.reviewType === 0);
   const latestVerification = verificationReviews.at(-1) ?? null;
+  const hasVerificationHash = latestVerification
+    ? !/^0x0+$/i.test(latestVerification.evidenceHash)
+    : false;
+  const publicClient = usePublicClient({ chainId: MANTLE_SEPOLIA_CHAIN_ID });
+  const [verificationTxHash, setVerificationTxHash] =
+    useState<`0x${string}` | null>(null);
+  const [isVerificationTxLoading, setIsVerificationTxLoading] = useState(false);
   const [investAmount, setInvestAmount] = useState("");
   const [rentTerm, setRentTerm] = useState(1);
   const [isInvesting, setIsInvesting] = useState(false);
@@ -775,6 +782,53 @@ function PropertyDrawer({
   const remainingFunding = getRemainingFunding(house);
   const minimumInvestment = getMinimumInvestment(house, remainingFunding);
   const maximumInvestment = getMaximumInvestment(house, remainingFunding);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadVerificationTransaction() {
+      if (!publicClient || !latestVerification) {
+        setVerificationTxHash(null);
+        return;
+      }
+
+      setIsVerificationTxLoading(true);
+
+      try {
+        const events = await publicClient.getContractEvents({
+          address: CONTRACT_ADDRESS,
+          abi: CONTRACT_ABI,
+          eventName: "AIReviewStored",
+          args: {
+            reviewId: latestVerification.id,
+            houseId: latestVerification.houseId,
+            reviewType: latestVerification.reviewType,
+          },
+          fromBlock: BITS_DEPLOYMENT_BLOCK,
+          toBlock: "latest",
+        });
+        const reviewEvent = events.at(-1);
+
+        if (isMounted) {
+          setVerificationTxHash(reviewEvent?.transactionHash ?? null);
+        }
+      } catch {
+        if (isMounted) {
+          setVerificationTxHash(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsVerificationTxLoading(false);
+        }
+      }
+    }
+
+    void loadVerificationTransaction();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [latestVerification, publicClient]);
 
   async function handleInvest() {
     if (!investAmount) return;
@@ -1039,15 +1093,29 @@ function PropertyDrawer({
                 <p className="text-sm font-medium leading-relaxed">
                   {latestVerification.summary.charAt(0).toUpperCase() + latestVerification.summary.slice(1)}
                 </p>
-                {latestVerification.evidenceURI ? (
-                  <a
-                    href={ipfsToGatewayUrl(latestVerification.evidenceURI)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-block text-xs font-bold underline underline-offset-2 opacity-75 hover:opacity-100"
-                  >
-                    View proof of ownership document ↗
-                  </a>
+                {hasVerificationHash ? (
+                  <div className="rounded-md border border-[#810B38]/15 bg-[#F1E2D1]/70 p-3">
+                    <p className="text-xs font-bold">AI verified hash</p>
+                    <p className="mt-2 break-all text-xs font-semibold opacity-80">
+                      {latestVerification.evidenceHash}
+                    </p>
+                    {verificationTxHash ? (
+                      <a
+                        href={`${MANTLESCAN_TX_URL}/${verificationTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-block text-xs font-bold underline underline-offset-2 opacity-75 hover:opacity-100"
+                      >
+                        View onchain verification
+                      </a>
+                    ) : (
+                      <p className="mt-3 text-xs font-semibold opacity-70">
+                        {isVerificationTxLoading
+                          ? "Loading onchain verification..."
+                          : "Onchain verification transaction unavailable."}
+                      </p>
+                    )}
+                  </div>
                 ) : null}
               </div>
             </section>
