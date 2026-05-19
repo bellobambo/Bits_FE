@@ -77,7 +77,7 @@ export function BitsApp() {
           <h1 className="text-5xl font-black tracking-normal sm:text-6xl">Bits</h1>
           <div className="mt-5 max-w-xl text-base font-semibold leading-7 sm:text-lg">
             <p>Landlords: Verify and list AI-reviewed hostels on Bits.</p>
-            <p>Investors: Review hostel-backed rental opportunities.</p>
+            <p>Investors: Review student hostel investment opportunities.</p>
             <p className="whitespace-nowrap">
               Students: Rent safely with transparent Mantle on-chain receipts.
             </p>
