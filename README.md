@@ -1,6 +1,6 @@
 # Bits
 
-Bits is an AI-assisted RWA application on Mantle that brings student hostel assets on-chain for verification, rental funding, and transparent rent receipts.
+Bits is an AI-assisted platform on Mantle blockchain that brings student hostel assets on-chain for verification, rental funding, and transparent rent receipts.
 Bits helps landlords list AI-verified hostel assets, investors review AI-verified hostel rental opportunities, and students rent safely with transparent Mantle on-chain receipts.
 
 
