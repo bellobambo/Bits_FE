@@ -49,6 +49,12 @@ export function ipfsToGatewayUrl(value: string) {
   return value;
 }
 
+export function reloadPageForLatestOnchainData() {
+  window.setTimeout(() => {
+    window.location.reload();
+  }, 1500);
+}
+
 export function getRoleLabel(roleValue: number) {
   return (
     ROLE_OPTIONS.find((option) => option.value === roleValue)?.label ?? "User"

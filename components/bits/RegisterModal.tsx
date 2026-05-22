@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { useRegister } from "@/hooks/useContract";
 import {
   getReadableErrorMessage,
+  reloadPageForLatestOnchainData,
   type RegisteredProfile,
   ROLE_IDS,
   ROLE_OPTIONS,
@@ -43,6 +44,7 @@ export function RegisterModal({ open, onClose, onRegistered }: RegisterModalProp
       schoolName,
     });
     onClose();
+    reloadPageForLatestOnchainData();
   }, [
     isRegisterSuccess,
     matricNumber,

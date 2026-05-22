@@ -28,6 +28,7 @@ import {
   getRegisteredUser,
   ipfsToGatewayUrl,
   MANTLE_SEPOLIA_CHAIN_ID,
+  reloadPageForLatestOnchainData,
   ROLE_IDS,
   tokenAmountToNumber,
 } from "@/components/bits/utils";
@@ -853,9 +854,15 @@ function PropertyDrawer({
 
     setIsInvesting(true);
     try {
-      await investAsync(house.id, parsedAmount);
+      const hash = await investAsync(house.id, parsedAmount);
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+
       toast.success("Investment successful");
       setInvestAmount("");
+      reloadPageForLatestOnchainData();
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
     } finally {
@@ -928,7 +935,7 @@ function PropertyDrawer({
 
     try {
       setInvestAmount(suggestedAmount);
-      await storeInvestmentReviewAsync(
+      const hash = await storeInvestmentReviewAsync(
         house.id,
         investmentReview.rating,
         getInvestmentReviewConfidenceBps(investmentReview.rating),
@@ -936,7 +943,13 @@ function PropertyDrawer({
         evidenceHash,
         "",
       );
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+
       toast.success("Investment review saved on-chain");
+      reloadPageForLatestOnchainData();
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
     } finally {
@@ -948,8 +961,14 @@ function PropertyDrawer({
     setIsRenting(true);
     try {
       const value = rentTerm === 1 ? house.yearlyRent : house.halfYearRent;
-      await payRentAsync(house.id, rentTerm, value);
+      const hash = await payRentAsync(house.id, rentTerm, value);
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+
       toast.success("Room rented successfully");
+      reloadPageForLatestOnchainData();
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
     } finally {

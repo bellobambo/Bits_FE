@@ -11,7 +11,10 @@ import {
   useStorePropertyVerificationReview,
   useUploadHouse,
 } from "@/hooks/useContract";
-import { getReadableErrorMessage } from "@/components/bits/utils";
+import {
+  getReadableErrorMessage,
+  reloadPageForLatestOnchainData,
+} from "@/components/bits/utils";
 
 type AddPropertyModalProps = {
   landlordName?: string;
@@ -347,7 +350,19 @@ export function AddPropertyModal({
     }
 
     try {
-      const newHouseId = nextHouseId ? BigInt(nextHouseId) : undefined;
+      if (!publicClient) {
+        throw new Error("Unable to confirm transaction. Check your network connection.");
+      }
+
+      const newHouseId =
+        nextHouseId !== undefined && nextHouseId !== null
+          ? BigInt(nextHouseId)
+          : undefined;
+
+      if (newHouseId === undefined) {
+        throw new Error("Unable to determine the next property ID.");
+      }
+
       const input: HouseInput = {
         hostelName: hostelName.trim(),
         hostelLocation: hostelLocation.trim(),
@@ -362,49 +377,48 @@ export function AddPropertyModal({
 
       const uploadHash = await uploadHouseAsync(input);
 
-      if (review && proofOfOwnership && newHouseId && publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash: uploadHash });
+      await publicClient.waitForTransactionReceipt({ hash: uploadHash });
 
-        const onchainSummary = getConciseVerificationReview(review);
-        const evidenceHash = keccak256(
-          stringToHex(
-            JSON.stringify({
-              houseId: newHouseId.toString(),
-              proof: proofOfOwnership.ipfsUrl,
-              status: review.verification.status,
-              summary: onchainSummary,
-            }),
-          ),
+      const onchainSummary = getConciseVerificationReview(review);
+      const evidenceHash = keccak256(
+        stringToHex(
+          JSON.stringify({
+            houseId: newHouseId.toString(),
+            proof: proofOfOwnership.ipfsUrl,
+            status: review.verification.status,
+            summary: onchainSummary,
+          }),
+        ),
+      );
+      const savingToast = toast.loading("Saving AI verification on-chain...");
+
+      setIsSavingAiVerificationOnchain(true);
+      await delay(900);
+
+      try {
+        const verificationHash = await storePropertyVerificationReviewAsync(
+          newHouseId,
+          review.verification.status,
+          getVerificationConfidenceBps(review.verification.confidence),
+          onchainSummary,
+          evidenceHash,
+          proofOfOwnership.ipfsUrl,
         );
-        const savingToast = toast.loading("Saving AI verification on-chain...");
-
-        setIsSavingAiVerificationOnchain(true);
-        await delay(900);
-
-        try {
-          const verificationHash = await storePropertyVerificationReviewAsync(
-            newHouseId,
-            review.verification.status,
-            getVerificationConfidenceBps(review.verification.confidence),
-            onchainSummary,
-            evidenceHash,
-            proofOfOwnership.ipfsUrl,
-          );
-          await publicClient.waitForTransactionReceipt({ hash: verificationHash });
-          toast.success("AI verification saved on-chain", {
-            id: savingToast,
-          });
-        } catch (error) {
-          toast.error(getReadableErrorMessage(error), {
-            id: savingToast,
-          });
-          return;
-        } finally {
-          setIsSavingAiVerificationOnchain(false);
-        }
+        await publicClient.waitForTransactionReceipt({ hash: verificationHash });
+        toast.success("AI verification saved on-chain", {
+          id: savingToast,
+        });
+      } catch (error) {
+        toast.error(getReadableErrorMessage(error), {
+          id: savingToast,
+        });
+        return;
+      } finally {
+        setIsSavingAiVerificationOnchain(false);
       }
 
       onClose();
+      reloadPageForLatestOnchainData();
     } catch (error) {
       toast.error(getReadableErrorMessage(error));
     }
