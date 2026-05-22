@@ -11,6 +11,7 @@ AI supports the asset onboarding and decision process:
 - Landlord verification: reviews proof details and hostel photos to produce a verification status, confidence score, summary, evidence hash, and evidence URI.
 - Investor review: analyzes hostel data, funding range, rent terms, and risk signals before an investor funds an opportunity.
 - Student review: checks school fit, rent option, room availability, and listing suitability before a student rents.
+(Students are given one week to move into their hall of residence before rent counting begins, and one month to move out or relocate after their rent expires.)
 
 The AI output is not treated as legal ownership certification. It is used as an assistive review layer that improves transparency and reduces manual review friction.
 
