@@ -115,6 +115,50 @@ type RentalReceipt = {
 
 const MANTLESCAN_TX_URL = "https://sepolia.mantlescan.xyz/tx";
 const BITS_DEPLOYMENT_BLOCK = BigInt(38_826_822);
+const RPC_LOG_BLOCK_RANGE = BigInt(9_999);
+
+type BitsPublicClient = NonNullable<ReturnType<typeof usePublicClient>>;
+
+async function getLatestBitsEvent({
+  publicClient,
+  eventName,
+  args,
+}: {
+  publicClient: BitsPublicClient;
+  eventName: "AIReviewStored" | "RentPaid";
+  args: Record<string, unknown>;
+}) {
+  const latestBlock = await publicClient.getBlockNumber();
+  let toBlock = latestBlock;
+
+  while (toBlock >= BITS_DEPLOYMENT_BLOCK) {
+    const rangeStart = toBlock - RPC_LOG_BLOCK_RANGE;
+    const fromBlock = rangeStart > BITS_DEPLOYMENT_BLOCK
+      ? rangeStart
+      : BITS_DEPLOYMENT_BLOCK;
+    const events = await publicClient.getContractEvents({
+      address: CONTRACT_ADDRESS,
+      abi: CONTRACT_ABI,
+      eventName,
+      args,
+      fromBlock,
+      toBlock,
+    });
+    const latestEvent = events.at(-1);
+
+    if (latestEvent) {
+      return latestEvent;
+    }
+
+    if (fromBlock === BITS_DEPLOYMENT_BLOCK) {
+      break;
+    }
+
+    toBlock = fromBlock - BigInt(1);
+  }
+
+  return null;
+}
 
 type RawHouseObject = Partial<House> & {
   landlord?: Address;
@@ -483,19 +527,15 @@ function StudentReceiptItem({
       setIsReceiptTxLoading(true);
 
       try {
-        const events = await publicClient.getContractEvents({
-          address: CONTRACT_ADDRESS,
-          abi: CONTRACT_ABI,
+        const rentPaidEvent = await getLatestBitsEvent({
+          publicClient,
           eventName: "RentPaid",
           args: {
             receiptId: receipt.id,
             houseId: receipt.houseId,
             student,
           },
-          fromBlock: BITS_DEPLOYMENT_BLOCK,
-          toBlock: "latest",
         });
-        const rentPaidEvent = events.at(-1);
 
         if (isMounted) {
           setReceiptTxHash(rentPaidEvent?.transactionHash ?? null);
@@ -796,19 +836,15 @@ function PropertyDrawer({
       setIsVerificationTxLoading(true);
 
       try {
-        const events = await publicClient.getContractEvents({
-          address: CONTRACT_ADDRESS,
-          abi: CONTRACT_ABI,
+        const reviewEvent = await getLatestBitsEvent({
+          publicClient,
           eventName: "AIReviewStored",
           args: {
             reviewId: latestVerification.id,
             houseId: latestVerification.houseId,
             reviewType: latestVerification.reviewType,
           },
-          fromBlock: BITS_DEPLOYMENT_BLOCK,
-          toBlock: "latest",
         });
-        const reviewEvent = events.at(-1);
 
         if (isMounted) {
           setVerificationTxHash(reviewEvent?.transactionHash ?? null);
@@ -1530,6 +1566,15 @@ export function PropertyList({
       .map(normalizeHouse)
       .filter((house) => house.id >= BigInt(0) && house.active);
   }, [data]);
+
+  useEffect(() => {
+    if (!Array.isArray(data)) {
+      return;
+    }
+
+    console.log("Fetched properties", data);
+    console.log("Normalized active properties", houses);
+  }, [data, houses]);
 
   useEffect(() => {
     let isMounted = true;
