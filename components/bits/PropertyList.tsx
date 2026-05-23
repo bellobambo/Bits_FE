@@ -10,6 +10,7 @@ import { CONTRACT_ABI, CONTRACT_ADDRESS } from "@/lib/contract";
 import {
   useGetAIReviews,
   useGetAllHouses,
+  useGetHouse,
   useGetHousePhotos,
   useGetInvestment,
   useGetInvestorHouses,
@@ -370,6 +371,34 @@ function LandlordName({ address }: { address: Address }) {
   return <>{user?.registered && user.name ? user.name : "Unknown owner"}</>;
 }
 
+function CopyableAddress({
+  address,
+  className = "",
+  full = false,
+}: {
+  address: Address;
+  className?: string;
+  full?: boolean;
+}) {
+  function handleCopyAddress() {
+    void navigator.clipboard.writeText(address).then(() => {
+      toast.success("Copied!");
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Copy wallet address ${address}`}
+      title={address}
+      onClick={handleCopyAddress}
+      className={`rounded-sm text-left font-semibold underline-offset-2 transition hover:underline focus:outline-none focus:ring-2 focus:ring-[#810B38] ${className}`}
+    >
+      {full ? address : formatAddress(address)}
+    </button>
+  );
+}
+
 function FundingProgress({ house }: { house: House }) {
   const remainingFunding = getRemainingFunding(house);
   const fundingPercentage = getFundingPercentage(house);
@@ -506,11 +535,16 @@ function StudentReceiptItem({
   receiptId: bigint;
   student: Address;
 }) {
-  const { data } = useGetReceipt(receiptId);
+  const { data: receiptData } = useGetReceipt(receiptId);
   const publicClient = usePublicClient({ chainId: MANTLE_SEPOLIA_CHAIN_ID });
   const receipt = useMemo(
-    () => (data ? normalizeReceipt(data as RawRentalReceipt) : null),
-    [data],
+    () => (receiptData ? normalizeReceipt(receiptData as RawRentalReceipt) : null),
+    [receiptData],
+  );
+  const { data: houseData } = useGetHouse(receipt?.houseId);
+  const receiptHouse = useMemo(
+    () => (houseData ? normalizeHouse(houseData as RawHouse | RawHouseObject) : null),
+    [houseData],
   );
   const [receiptTxHash, setReceiptTxHash] = useState<`0x${string}` | null>(null);
   const [isReceiptTxLoading, setIsReceiptTxLoading] = useState(false);
@@ -572,7 +606,8 @@ function StudentReceiptItem({
         <div>
           <p className="font-bold">Receipt #{receipt.id.toString()}</p>
           <p className="mt-1 text-xs font-semibold opacity-75">
-            House #{receipt.houseId.toString()} • {getRentTermLabel(receipt.term)}
+            {receiptHouse?.hostelName || `House #${receipt.houseId.toString()}`} •{" "}
+            {getRentTermLabel(receipt.term)}
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-[#810B38] px-3 py-1 text-xs font-bold text-[#F1E2D1]">
@@ -598,7 +633,9 @@ function StudentReceiptItem({
         </p>
         <p className="sm:col-span-2">
           <span className="font-bold">Landlord:</span> {receipt.landlordName}{" "}
-          <span className="font-semibold">({formatAddress(receipt.landlord)})</span>
+          <span>(</span>
+          <CopyableAddress address={receipt.landlord} />
+          <span>)</span>
         </p>
       </div>
       <div className="mt-auto pt-4">
@@ -1085,7 +1122,11 @@ function PropertyDrawer({
             <p className="mt-2">
               <LandlordName address={house.landlord} />
             </p>
-            <p className="mt-1 break-all font-medium">{house.landlord}</p>
+            <CopyableAddress
+              address={house.landlord}
+              className="mt-1 block break-all font-medium"
+              full
+            />
           </section>
 
           <section className="grid gap-3 rounded-lg border border-[#810B38]/15 bg-white/35 p-4 sm:grid-cols-2">
@@ -1507,9 +1548,10 @@ function PropertyCard({
             <span className="font-bold">Owner:</span>{" "}
             <LandlordName address={house.landlord} />
           </p>
-          <p className="shrink-0 text-xs font-medium">
-            {formatAddress(house.landlord)}
-          </p>
+          <CopyableAddress
+            address={house.landlord}
+            className="shrink-0 text-xs font-medium"
+          />
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-3 border-t border-[#810B38]/15 pt-4">
@@ -1520,7 +1562,7 @@ function PropertyCard({
                   maximumFractionDigits: 2,
                 })} USDY`
               : isMntPriceLoading
-                ? "Loading USDY..."
+                ? null
                 : null}
           </p>
         </div>
@@ -1596,7 +1638,7 @@ export function PropertyList({
       }
     }
 
-    void fetchMntUsdPrice();
+    // void fetchMntUsdPrice();
 
     return () => {
       isMounted = false;
