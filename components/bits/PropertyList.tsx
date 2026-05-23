@@ -1192,12 +1192,11 @@ function PropertyDrawer({
                 {hasVerificationHash ? (
                   <div className="rounded-md border border-[#810B38]/15 bg-[#F1E2D1]/70 p-3">
                     <p className="text-xs font-bold">AI verified hash</p>
-                    <p className="mt-2 break-all text-xs font-semibold opacity-80">
-                      {verificationTxHash ??
-                        (isVerificationTxLoading
-                          ? "Loading onchain verification hash..."
-                          : "Onchain verification hash unavailable.")}
-                    </p>
+                    {verificationTxHash ? (
+                      <p className="mt-2 break-all text-xs font-semibold opacity-80">
+                        {verificationTxHash}
+                      </p>
+                    ) : null}
                     {verificationTxHash ? (
                       <a
                         href={`${MANTLESCAN_TX_URL}/${verificationTxHash}`}
